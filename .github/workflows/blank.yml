@@ -1,18 +1,105 @@
-      - name: Build APK
+      name: Build Sinhala Status App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find project ZIP
+        id: findzip
+        shell: bash
         run: |
-          PROJECT_DIR=$(dirname "$(find project -name "settings.gradle.kts" -type f | head -n 1)")
-          cd "$PROJECT_DIR"
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
-          echo "===== GRADLE BUILD START ====="
-          gradle assembleDebug --stacktrace 2>&1 | tee build.log
-          BUILD_RESULT=${PIPESTATUS[0]}
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No ZIP file found."
+            exit 1
+          fi
 
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found: $ZIP_FILE"
+
+      - name: Extract project
+        shell: bash
+        run: |
+          rm -rf project
+          mkdir project
+          unzip -o "${{ steps.findzip.outputs.ZIP_FILE }}" -d project
+
+          echo "Project files:"
+          find project -maxdepth 3 -type f | sort | head -n 150
+
+      - name: Find Android project
+        id: project
+        shell: bash
+        run: |
+          SETTINGS=$(find project -type f -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "Gradle settings file not found."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Android project: $PROJECT_DIR"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build Debug APK
+        shell: bash
+        working-directory: ${{ steps.project.outputs.PROJECT_DIR }}
+        run: |
+          set -o pipefail
+
+          echo "================================"
+          echo "BUILDING SINHALA STATUS APP"
+          echo "================================"
+
+          gradle clean assembleDebug \
+            --no-daemon \
+            --max-workers=1 \
+            --stacktrace \
+            --console=plain 2>&1 | tee build.log
+
+      - name: Show build error
+        if: failure()
+        shell: bash
+        working-directory: ${{ steps.project.outputs.PROJECT_DIR }}
+        run: |
           echo ""
-          echo "===== IMPORTANT ERRORS ====="
-          grep -n -E "What went wrong|Caused by:|error:|ERROR|FAILURE" build.log | head -n 40 || true
+          echo "================================"
+          echo "BUILD ERROR"
+          echo "================================"
 
-          echo ""
-          echo "===== BUILD RESULT ====="
-          echo "Exit code: $BUILD_RESULT"
+          grep -n -E \
+            "FAILURE:|What went wrong:|Caused by:|error:|ERROR|Execution failed" \
+            build.log | tail -n 60 || true
 
-          exit $BUILD_RESULT
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SinhalaStatusHub-APK
+          path: |
+            project/**/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
