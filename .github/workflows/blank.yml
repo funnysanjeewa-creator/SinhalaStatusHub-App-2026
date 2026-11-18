@@ -1,74 +1,18 @@
-name: Build Sinhala Status App
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ "main" ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Show uploaded files
-        run: |
-          echo "Files in repository:"
-          find . -maxdepth 2 -type f | sort
-
-      - name: Find ZIP
-        run: |
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found in repository."
-            exit 1
-          fi
-
-          echo "ZIP found: $ZIP_FILE"
-
-      - name: Extract project
-        run: |
-          mkdir -p project
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-          unzip -q "$ZIP_FILE" -d project
-
-          echo "Extracted project files:"
-          find project -maxdepth 4 -type f | sort | head -n 200
-
-      - name: Find Gradle project
-        run: |
-          SETTINGS=$(find project -name "settings.gradle.kts" -type f | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle.kts was not found."
-            exit 1
-          fi
-
-          echo "Found Gradle project:"
-          echo "$SETTINGS"
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
-
       - name: Build APK
         run: |
           PROJECT_DIR=$(dirname "$(find project -name "settings.gradle.kts" -type f | head -n 1)")
           cd "$PROJECT_DIR"
-          gradle assembleDebug --stacktrace
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: SinhalaStatusHub-APK
-          path: "**/app/build/outputs/apk/debug/*.apk"
+          echo "===== GRADLE BUILD START ====="
+          gradle assembleDebug --stacktrace 2>&1 | tee build.log
+          BUILD_RESULT=${PIPESTATUS[0]}
+
+          echo ""
+          echo "===== IMPORTANT ERRORS ====="
+          grep -n -E "What went wrong|Caused by:|error:|ERROR|FAILURE" build.log | head -n 40 || true
+
+          echo ""
+          echo "===== BUILD RESULT ====="
+          echo "Exit code: $BUILD_RESULT"
+
+          exit $BUILD_RESULT
