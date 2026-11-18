@@ -1,4 +1,4 @@
-      name: Build Sinhala Status App
+     name: Build Sinhala Status App
 
 on:
   workflow_dispatch:
